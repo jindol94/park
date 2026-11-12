@@ -371,10 +371,10 @@ let runHold=false;const rb=$("#runb");rb.addEventListener("pointerdown",e=>{e.pr
 
 /* ---------- 실시간 접속 (Supabase Realtime) ----------
    url·anonKey를 채우면 다른 기기의 러너가 보임. 비워 두면 같은 브라우저의 다른 탭끼리만 연결되는 테스트 모드 */
-const NET_CFG={url:"",anonKey:""};
+const NET_CFG={url:"https://mjkeqwzksfxhydixpyad.supabase.co",anonKey:"eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im1qa2Vxd3prc2Z4aHlkaXhweWFkIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTQ0NzAzMzEsImV4cCI6MjExMDA0NjMzMX0.bEIhklbaQB7gtVB9IfYDhByAF9mYtGMkL3SVhKGvCx4"};
 const NET={id:Math.random().toString(36).slice(2,10),room:null,peers:new Map(),client:null,ch:null,bc:null,acc:0,online:false};
 const loadScript=src=>new Promise((res,rej)=>{const e=document.createElement("script");e.src=src;e.onload=res;e.onerror=rej;document.head.appendChild(e)});
-async function netInit(){if(!NET_CFG.url||!NET_CFG.anonKey)return;try{await loadScript("https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js");NET.client=window.supabase.createClient(NET_CFG.url,NET_CFG.anonKey,{realtime:{params:{eventsPerSecond:10}}});NET.online=true;if(NET.room){const r=NET.room;NET.room=null;netJoin(r)}}catch(e){NET.online=false}}
+async function netInit(){if(!NET_CFG.url||!NET_CFG.anonKey)return;try{await loadScript("https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js");NET.client=window.supabase.createClient(NET_CFG.url,NET_CFG.anonKey,{realtime:{params:{eventsPerSecond:10}}});NET.online=true;if(NET.room){const r=NET.room;NET.room=null;netJoin(r)}}catch(e){NET.online=false}}
 const num=(v,a,b)=>clamp(+v||0,a,b);
 function netRecv(m){if(!m||typeof m!=="object"||m.id===NET.id||m.room!==NET.room)return;if(m.bye){netDrop(m.id);return}
  let p=NET.peers.get(m.id);if(!p){p={id:String(m.id).slice(0,12)};NET.peers.set(m.id,p)}p.st=m;p.at=performance.now()}
@@ -562,7 +562,7 @@ const P_=(()=>{
  function returnTo(key){const G=GATES.find(g=>g.key===key);if(G){const l=Math.hypot(G.x,G.z);me.position.set(G.x-G.x/l*9,0,G.z-G.z/l*9);heading=Math.atan2(G.x,G.z);me.rotation.y=heading}vel.set(0,0);speed=0;nearGate=undefined;placeCam(0,true)}
  placeCam(0,true);
  const netState=()=>({m:"p",x:+me.position.x.toFixed(2),z:+me.position.z.toFixed(2),h:+heading.toFixed(2),sp:+speed.toFixed(2)});
- return{scene,cam,step,setName,returnTo,netState,taCancel:()=>{if(TA.state!=="idle")taReset()},resize:(w,h)=>{cam.aspect=w/h;cam.fov=w<h?52:40;cam.updateProjectionMatrix()}};
+ return{scene,cam,step,setName,returnTo,netState,moving:()=>speed>.1,taCancel:()=>{if(TA.state!=="idle")taReset()},resize:(w,h)=>{cam.aspect=w/h;cam.fov=w<h?52:40;cam.updateProjectionMatrix()}};
 })();
 
 /* =====================================================================
@@ -890,7 +890,7 @@ function adaptRes(ms){ftAvg+=(Math.min(ms,100)-ftAvg)*.05;ftT+=ms/1000;if(ftT<2)
  if(ftAvg>24&&prNow>.75){prNow=Math.max(.75,prNow-.25);R.setPixelRatio(prNow);resize();ftT=0}
  else if(ftAvg<12&&prNow<PR_MAX&&ftT>10&&prUps<2){prUps++;prNow=Math.min(PR_MAX,prNow+.25);R.setPixelRatio(prNow);resize();ftT=0}}
 function loop(now){const raw=now-last;const dt=Math.min(.05,raw/1000);last=now;t+=dt;if(!document.hidden)adaptRes(raw);
- if(mode==="park"){P_.step(dt,t);if(started)netTick(dt,P_.netState,6);R.render(P_.scene,P_.cam)}else{cStep(dt,t);netTick(dt,cNetState,3);R.render(cScene,cCam)}
+ if(mode==="park"){P_.step(dt,t);if(started)netTick(dt,P_.netState,P_.moving()?5:.5);R.render(P_.scene,P_.cam)}else{cStep(dt,t);netTick(dt,cNetState,1);R.render(cScene,cCam)}
  onlineT-=dt;if(onlineT<=0){onlineT=.5;const n=peersIn("p");$("#online").innerHTML=`<b>●</b> `+(n?`${n+1}명 접속 중`:"지금은 혼자예요")}
  requestAnimationFrame(loop)}
 requestAnimationFrame(loop);
