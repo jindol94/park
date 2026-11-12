@@ -372,27 +372,36 @@ let runHold=false;const rb=$("#runb");rb.addEventListener("pointerdown",e=>{e.pr
 /* ---------- 실시간 접속 (Supabase Realtime) ----------
    url·anonKey를 채우면 다른 기기의 러너가 보임. 비워 두면 같은 브라우저의 다른 탭끼리만 연결되는 테스트 모드 */
 const NET_CFG={url:"https://mjkeqwzksfxhydixpyad.supabase.co",anonKey:"eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im1qa2Vxd3prc2Z4aHlkaXhweWFkIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTQ0NzAzMzEsImV4cCI6MjExMDA0NjMzMX0.bEIhklbaQB7gtVB9IfYDhByAF9mYtGMkL3SVhKGvCx4"};
-const NET={id:Math.random().toString(36).slice(2,10),room:null,peers:new Map(),client:null,ch:null,bc:null,acc:0,online:false};
+const NET={id:Math.random().toString(36).slice(2,10),room:null,peers:new Map(),client:null,ch:null,bc:null,acc:0,online:false,present:null,last:null};
 const loadScript=src=>new Promise((res,rej)=>{const e=document.createElement("script");e.src=src;e.onload=res;e.onerror=rej;document.head.appendChild(e)});
 async function netInit(){if(!NET_CFG.url||!NET_CFG.anonKey)return;try{await loadScript("https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js");NET.client=window.supabase.createClient(NET_CFG.url,NET_CFG.anonKey,{realtime:{params:{eventsPerSecond:10}}});NET.online=true;if(NET.room){const r=NET.room;NET.room=null;netJoin(r)}}catch(e){NET.online=false}}
 const num=(v,a,b)=>clamp(+v||0,a,b);
 function netRecv(m){if(!m||typeof m!=="object"||m.id===NET.id||m.room!==NET.room)return;if(m.bye){netDrop(m.id);return}
  let p=NET.peers.get(m.id);if(!p){p={id:String(m.id).slice(0,12)};NET.peers.set(m.id,p)}p.st=m;p.at=performance.now()}
 function netDrop(id){const p=NET.peers.get(id);if(p&&p.obj&&p.obj.parent)p.obj.parent.remove(p.obj);NET.peers.delete(id)}
+const myMeta=()=>({n:nick,g:gender,away:document.hidden?1:0});
+function presenceSync(){if(!NET.ch)return;const st=NET.ch.presenceState(),m=new Map();Object.keys(st).forEach(k=>{if(k!==NET.id)m.set(k,st[k][0]||{})});NET.present=m;
+ NET.peers.forEach((p,id)=>{const pm=m.get(id);if(pm)p.away=pm.away?1:0})}
 function netJoin(room){if(NET.room===room)return;netLeave();NET.room=room;
- if(NET.client){const ch=NET.client.channel("prerun-"+room,{config:{broadcast:{self:false}}});ch.on("broadcast",{event:"st"},({payload})=>netRecv(payload)).subscribe();NET.ch=ch}
+ if(NET.client){const ch=NET.client.channel("prerun-"+room,{config:{broadcast:{self:false},presence:{key:NET.id}}});
+  ch.on("broadcast",{event:"st"},({payload})=>netRecv(payload))
+   .on("presence",{event:"sync"},presenceSync)
+   .on("presence",{event:"leave"},({key})=>{if(key!==NET.id)netDrop(key)})
+   .subscribe(status=>{if(status==="SUBSCRIBED"){ch.track(myMeta());NET.acc=1}});NET.ch=ch;NET.present=new Map()}
  else if(window.BroadcastChannel){NET.bc=new BroadcastChannel("prerun-"+room);NET.bc.onmessage=e=>netRecv(e.data)}
  NET.acc=1}
-function netSend(st){if(!NET.room)return;st.id=NET.id;st.room=NET.room;st.n=nick;st.g=gender;try{if(NET.ch)NET.ch.send({type:"broadcast",event:"st",payload:st});else if(NET.bc)NET.bc.postMessage(st)}catch(e){}}
-function netLeave(){if(!NET.room)return;netSend({bye:1});if(NET.ch){try{NET.client.removeChannel(NET.ch)}catch(e){}NET.ch=null}if(NET.bc){NET.bc.close();NET.bc=null}[...NET.peers.keys()].forEach(netDrop);NET.room=null}
+function netSend(st){if(!NET.room)return;if(!st.bye)NET.last=st;st.id=NET.id;st.room=NET.room;st.n=nick;st.g=gender;try{if(NET.ch)NET.ch.send({type:"broadcast",event:"st",payload:st});else if(NET.bc)NET.bc.postMessage(st)}catch(e){}}
+function netLeave(){if(!NET.room)return;netSend({bye:1});if(NET.ch){try{NET.ch.untrack();NET.client.removeChannel(NET.ch)}catch(e){}NET.ch=null;NET.present=null}if(NET.bc){NET.bc.close();NET.bc=null}[...NET.peers.keys()].forEach(netDrop);NET.room=null}
 addEventListener("pagehide",()=>{try{netLeave()}catch(e){}});
 function netTick(dt,stateFn,hz){NET.acc+=dt;if(NET.acc>=1/hz){NET.acc=0;const st=stateFn();if(st)netSend(st)}
- const now=performance.now();NET.peers.forEach((p,id)=>{if(now-p.at>6000)netDrop(id)})}
-function peerObj(p,scene){const st=p.st,g=st.g==="f"?"f":"m",n=String(st.n||"러너").slice(0,10);
+ const now=performance.now();NET.peers.forEach((p,id)=>{const live=NET.present&&NET.present.has(id);if(now-p.at>(live?90000:8000))netDrop(id)})}
+// 다른 앱으로 넘어가면 '자리 비움'으로 표시, 돌아오면 바로 위치 전송
+document.addEventListener("visibilitychange",()=>{try{if(NET.ch)NET.ch.track(myMeta());if(!document.hidden&&NET.last){NET.acc=1}}catch(e){}});
+function peerObj(p,scene){const st=p.st,g=st.g==="f"?"f":"m",n=String(st.n||"러너").slice(0,10)+(p.away?" · 자리 비움":"");
  if(p.obj&&(p.objG!==g||p.objN!==n||p.obj.parent!==scene)){if(p.obj.parent)p.obj.parent.remove(p.obj);p.obj=null}
  if(!p.obj){p.obj=setLook(makeRunner(),g);p.obj.add(nameSprite(n,false));scene.add(p.obj);p.objG=g;p.objN=n;p.fresh=true;p.h=num(st.h,-10,10)}return p.obj}
 const angLerp=(a,b,k)=>a+((((b-a)+Math.PI*3)%(Math.PI*2))-Math.PI)*k;
-function peersIn(m){let c=0;NET.peers.forEach(p=>{if(p.st&&p.st.m===m)c++});return c}
+function peersIn(m){if(NET.present)return NET.present.size;let c=0;NET.peers.forEach(p=>{if(p.st&&p.st.m===m)c++});return c}
 
 /* ---------- 카메라 조작: 화면 드래그로 회전, 두 손가락·휠로 확대 ---------- */
 /* 카메라 리그: 입력은 목표값(ty·tp·td)만 바꾸고, 실제 값은 매 프레임 부드럽게 따라감.
@@ -552,7 +561,7 @@ const P_=(()=>{
   // 다른 러너
   NET.peers.forEach(p=>{const st=p.st;if(!st||st.m!=="p"){if(p.obj)p.obj.visible=false;return}const o=peerObj(p,scene);o.visible=true;const tx=num(st.x,-70,70),tz=num(st.z,-70,70);
    if(p.fresh){o.position.set(tx,0,tz);p.fresh=false}const k=1-Math.exp(-dt*10);o.position.x=lerp(o.position.x,tx,k);o.position.z=lerp(o.position.z,tz,k);
-   p.h=angLerp(p.h,num(st.h,-10,10),1-Math.exp(-dt*12));o.rotation.y=p.h;animRunner(o,num(st.sp,0,6),dt,t)});
+   p.h=angLerp(p.h,num(st.h,-10,10),1-Math.exp(-dt*12));o.rotation.y=p.h;animRunner(o,p.away||performance.now()-p.at>1500?0:num(st.sp,0,6),dt,t)});
   let g=null,bd=1e9;GATES.forEach(G=>{const d=Math.hypot(me.position.x-G.x,me.position.z-G.z);if(d<10&&d<bd){bd=d;g=G}});showCard(started?g:null);
   GATES.forEach(G=>{if(G.portal)G.portal.material.opacity=.75+Math.sin(t*2+G.gd.id)*.2});
   jet.position.y=2.7+Math.abs(Math.sin(t*3))*.35;jet.scale.setScalar(1+Math.sin(t*6)*.1);
@@ -823,9 +832,9 @@ function cStep(dt,t){
  // 같은 코스의 다른 러너: 마지막으로 받은 위치 + 속도로 사이 구간을 채움
  const now=performance.now();
  NET.peers.forEach(p=>{const st=p.st;if(!st||st.m!=="c"){if(p.obj)p.obj.visible=false;return}const o=peerObj(p,cScene);o.visible=true;
-  const est=clamp(num(st.s,0,W.L)+num(st.v,0,400)*(now-p.at)/1000,0,W.L-1);if(p.sv==null||p.fresh||Math.abs(p.sv-est)>150)p.sv=est;else p.sv=lerp(p.sv,est,1-Math.exp(-dt*6));p.fresh=false;
+  const est=clamp(num(st.s,0,W.L)+(p.away?0:num(st.v,0,400))*Math.min(now-p.at,2500)/1000,0,W.L-1);if(p.sv==null||p.fresh||Math.abs(p.sv-est)>150)p.sv=est;else p.sv=lerp(p.sv,est,1-Math.exp(-dt*6));p.fresh=false;
   const q=cAt(p.sv),la=num(st.lat,-6,6)*W.latFactor(p.sv);o.position.set(q.x-q.fz*la,q.y+.1,q.z+q.fx*la);p.h=angLerp(p.h,Math.atan2(q.fx,q.fz),1-Math.exp(-dt*8));o.rotation.y=p.h;
-  animRunner(o,num(st.vr,0,8)*Math.min(num(st.mu,1,60),2),dt,t)});
+  animRunner(o,p.away?0:num(st.vr,0,8)*Math.min(num(st.mu,1,60),2),dt,t)});
  cSun.position.set(cMe.position.x-60,cMe.position.y+90,cMe.position.z+40);cSun.target.position.copy(cMe.position);
  placeCCam(dt);if(++chunkF%5===0)updChunks();hudT-=dt;if(hudT<=0){hudT=.1;updHUD(v)}}
 
