@@ -47,14 +47,10 @@ body[data-mode=course] .joy{bottom:calc(env(safe-area-inset-bottom,0px) + 112px)
 .joy .base{inset:0;width:100%;height:100%}
 .joy .knob{width:52px;height:52px;left:calc(50% - 26px);top:calc(50% - 26px);transition:transform .08s}
 .joy.active .knob{transition:none}
-.runb{right:max(22px,calc(env(safe-area-inset-right,0px) + 22px));bottom:calc(env(safe-area-inset-bottom,0px) + 40px);width:78px;height:78px;border-radius:50%;background:rgba(255,255,255,.92);box-shadow:0 6px 16px rgba(14,39,48,.15);display:grid;place-items:center}
-.runb img{width:34px;height:34px}
-.runb.on{background:var(--accent)}
-.runb.on img{filter:brightness(0) invert(1)}
 .keys{left:50%;transform:translateX(-50%);bottom:calc(env(safe-area-inset-bottom,0px) + 16px);font-size:12px;background:rgba(255,255,255,.75);border-radius:999px;padding:6px 12px;white-space:nowrap}
 body[data-mode=course] .keys{bottom:calc(env(safe-area-inset-bottom,0px) + 112px)}
 @media (pointer:coarse){.keys{display:none!important}}
-@media (pointer:fine){.joy,.runb{display:none!important}}
+@media (pointer:fine){.joy{display:none!important}}
 .card{left:50%;bottom:calc(env(safe-area-inset-bottom,0px) + 24px);transform:translate(-50%,20px);opacity:0;pointer-events:none;transition:opacity .2s,transform .2s;width:min(340px,calc(100% - 200px));min-width:240px;background:var(--surface);border-radius:20px;padding:16px 18px;box-shadow:0 12px 32px rgba(14,39,48,.18);display:grid;gap:10px}
 @media (max-width:560px){.card{bottom:calc(env(safe-area-inset-bottom,0px) + 170px);width:calc(100% - 32px);min-width:0;grid-template-columns:1fr auto;column-gap:12px;row-gap:2px;padding:12px 14px;border-radius:16px}.card .tag{grid-column:1}.card .t{grid-column:1;font-size:16px}.card .m{grid-column:1;gap:8px;font-size:12px}.card .m b{font-size:14px}.card .m span:last-child{display:none}.card .ctas{grid-column:2;grid-row:1/4;align-self:center}.card .ctas button{padding:12px 14px;white-space:nowrap}}
 .card.show{opacity:1;transform:translate(-50%,0);pointer-events:auto}
@@ -166,7 +162,6 @@ body[data-mode=course] .note.hot,body[data-mode=course] .cb.mode.man{background:
 <div class="hud tr p-only"><div class="badge glass" id="online"><b>●</b> 지금은 혼자예요</div><button class="rbtn glass" id="raceBtn"><i>▶</i>대회 코스 바로가기</button></div>
 <div class="hud tachip glass p-only" id="ta" hidden><div class="tt" id="taT">0.00</div><div class="ts" id="taS"></div></div>
 <div class="hud cd p-only" id="cd" hidden></div>
-<button class="hud runb p-only" id="runb" aria-label="달리기"><img id="runIcon" alt=""></button>
 <div class="hud card p-only" id="card" role="dialog" aria-live="polite"></div>
 <!-- 코스 HUD -->
 <div class="hud tl ctl c-only">
@@ -234,7 +229,7 @@ const SVG={signMbn:`<svg xmlns="http://www.w3.org/2000/svg" width="1024" height=
 const svgURL=s=>"data:image/svg+xml;charset=utf-8,"+encodeURIComponent(s);
 const $=s=>document.querySelector(s);
 document.body.dataset.mode="park";
-$("#logoSym").src=svgURL(SVG.logoSym);$("#logoH").src=svgURL(SVG.logoH);$("#joyBase").src=svgURL(SVG.joyBase);$("#joyKnob").src=svgURL(SVG.joyKnob);$("#runIcon").src=svgURL(SVG.run);$("#parkIcon").src=svgURL(SVG.park);$("#playIcon").src=svgURL(SVG.pause);
+$("#logoSym").src=svgURL(SVG.logoSym);$("#logoH").src=svgURL(SVG.logoH);$("#joyBase").src=svgURL(SVG.joyBase);$("#joyKnob").src=svgURL(SVG.joyKnob);$("#parkIcon").src=svgURL(SVG.park);$("#playIcon").src=svgURL(SVG.pause);
 const clamp=(v,a,b)=>Math.max(a,Math.min(b,v)),lerp=(a,b,t)=>a+(b-a)*t;
 const save=(k,v)=>{try{localStorage.setItem(k,v)}catch(e){}},load=k=>{try{return localStorage.getItem(k)}catch(e){return null}};
 const fmt=s=>{s=Math.max(0,Math.round(s));const h=Math.floor(s/3600),m=Math.floor(s%3600/60),x=s%60;return h+":"+String(m).padStart(2,"0")+":"+String(x).padStart(2,"0")};
@@ -311,6 +306,18 @@ const TL=new THREE.TextureLoader();
 function imgTex(name,rep){const t=TL.load("assets/"+name);t.encoding=THREE.sRGBEncoding;t.anisotropy=8;if(rep){t.wrapS=t.wrapT=THREE.RepeatWrapping;t.repeat.set(rep[0],rep[1])}return t}
 const CLOUDS=[1,2,3,4].map(i=>imgTex("cloud_0"+i+".webp"));
 
+/* ---------- 흙먼지: 달릴 때 발 디딜 때마다 작은 먼지 ---------- */
+const DUST_TEX=(()=>{const c=document.createElement("canvas");c.width=c.height=64;const x=c.getContext("2d");const g=x.createRadialGradient(32,32,2,32,32,30);g.addColorStop(0,"rgba(255,255,255,1)");g.addColorStop(.55,"rgba(255,255,255,.55)");g.addColorStop(1,"rgba(255,255,255,0)");x.fillStyle=g;x.beginPath();x.arc(24,34,22,0,7);x.arc(40,30,20,0,7);x.arc(32,40,18,0,7);x.fill();const t=new THREE.CanvasTexture(c);t.encoding=THREE.sRGBEncoding;return t})();
+function makeDust(scene,n=48){const pool=[];for(let i=0;i<n;i++){const sp=new THREE.Sprite(new THREE.SpriteMaterial({map:DUST_TEX,transparent:true,depthWrite:false,opacity:0}));sp.visible=false;scene.add(sp);pool.push({sp,life:0,max:1,vx:0,vy:0,vz:0,s0:.3,s1:1,a:.5})}let k=0;
+ return{puff(x,y,z,col,o={}){const P=pool[k++%n];P.sp.material.color.set(col);P.sp.position.set(x+(Math.random()-.5)*.15,y+.12,z+(Math.random()-.5)*.15);P.life=0;P.max=o.life||.55;P.s0=o.s0||.28;P.s1=o.s1||.95;P.a=o.a||.65;
+   P.vx=(o.vx||0)+(Math.random()-.5)*.5;P.vz=(o.vz||0)+(Math.random()-.5)*.5;P.vy=.35+Math.random()*.3;P.sp.visible=true},
+  step(dt){pool.forEach(P=>{if(!P.sp.visible)return;P.life+=dt;const u=P.life/P.max;if(u>=1){P.sp.visible=false;return}
+   P.sp.position.x+=P.vx*dt;P.sp.position.y+=P.vy*dt;P.sp.position.z+=P.vz*dt;P.vx*=.92;P.vz*=.92;const sc=lerp(P.s0,P.s1,1-Math.pow(1-u,2));P.sp.scale.set(sc,sc*.8,1);P.sp.material.opacity=P.a*(1-u)*(u<.15?u/.15:1)})}}}
+// 발 디딜 때(걸음 주기 반 바퀴마다) 먼지
+function footDust(rn,dust,col,minSpd,spd,h,o){const u=rn.userData,st=Math.floor(u.phase/Math.PI);if(u.lastStep===undefined)u.lastStep=st;
+ if(st!==u.lastStep){u.lastStep=st;if(spd>minSpd){const side=(st%2?1:-1)*.12,bx=-Math.sin(h)*.25,bz=-Math.cos(h)*.25;
+  dust.puff(rn.position.x+bx+Math.cos(h)*side,rn.position.y,rn.position.z+bz-Math.sin(h)*side,col,Object.assign({vx:bx*1.5,vz:bz*1.5},o))}}}
+
 /* ---------- 캐릭터 ---------- */
 function makeRunner(shirt=T.accent,hairC=T.ink){
  const root=new THREE.Group(),body=new THREE.Group();root.add(body);
@@ -376,7 +383,7 @@ function joyMove(e){const r=jEl.getBoundingClientRect(),c=r.width/2;let dx=e.cli
 jEl.addEventListener("pointerdown",e=>{joy.active=true;joy.id=e.pointerId;jEl.setPointerCapture(e.pointerId);jEl.classList.add("active");joyMove(e)});
 jEl.addEventListener("pointermove",e=>{if(joy.active&&e.pointerId===joy.id)joyMove(e)});
 const joyEnd=()=>{joy.active=false;joy.x=joy.y=0;kn.style.transform="";jEl.classList.remove("active")};jEl.addEventListener("pointerup",joyEnd);jEl.addEventListener("pointercancel",joyEnd);
-let runHold=false;const rb=$("#runb");rb.addEventListener("pointerdown",e=>{e.preventDefault();runHold=true;rb.classList.add("on")});["pointerup","pointercancel","pointerleave"].forEach(ev=>rb.addEventListener(ev,()=>{runHold=false;rb.classList.remove("on")}));
+
 
 /* ---------- 실시간 하늘: 접속 시각에 맞춰 새벽·낮·노을·밤 ---------- */
 const HOUR_OVERRIDE=(()=>{try{const v=new URLSearchParams(location.search).get("hour");return v==null?null:+v}catch(e){return null}})();
@@ -568,9 +575,11 @@ const P_=(()=>{
   const g=new THREE.Group();g.position.set(14.2,0,PZ-1.9);scene.add(g);[-3.7,3.7].forEach(a=>add(new THREE.BoxGeometry(.18,4.6,.18),mat(T.ink),a,2.3,0,{parent:g}));
   const bd=new THREE.Mesh(new THREE.PlaneGeometry(7.2,3.6),new THREE.MeshBasicMaterial({map:imgTex("photozone_backdrop.webp")}));bd.position.set(0,1.95,.02);bd.userData.keep=true;g.add(bd);
   add(new THREE.BoxGeometry(7.4,3.8,.1),mat(0xD9DDE0),0,1.95,-.06,{parent:g});
-  const p=new THREE.Mesh(new THREE.PlaneGeometry(3.4,.85),new THREE.MeshBasicMaterial({map:tx}));p.position.set(0,4.3,.02);p.userData.keep=true;g.add(p);COLL.push({x:10.5,z:PZ-1.9,r:.35},{x:17.9,z:PZ-1.9,r:.35},{x:14.2,z:PZ-1.9,r:3.2})}
+  const p=new THREE.Mesh(new THREE.PlaneGeometry(3.4,.85),new THREE.MeshBasicMaterial({map:tx}));p.position.set(0,4.3,.02);p.userData.keep=true;g.add(p);COLL.push({x:10.5,z:PZ-1.9,r:.35},{x:17.9,z:PZ-1.9,r:.35});for(let bx=11;bx<=17.4;bx+=.8)COLL.push({x:bx,z:PZ-2.1,r:.35})}
  const groundAt=(x,z)=>{let y=0;POD.forEach(b=>{if(Math.abs(x-b.x)<1.15&&Math.abs(z-PZ)<1.15)y=Math.max(y,b.h)});return y};
  // 플레이어 / NPC
+ const dust=makeDust(scene);
+ const groundCol=(x,z)=>{const r=Math.hypot(x,z);return r>=LAYOUT.trackIn&&r<=LAYOUT.trackOut?0xE29A84:r>LAYOUT.trackOut&&r<42?0xDCCDAE:0xD9D2B6};
  const me=makeRunner();scene.add(me);me.position.set(LAYOUT.spawn.x,0,N(LAYOUT.spawn.n));let heading=Math.PI;me.rotation.y=heading;
  window.__me=me;let label=null;const vel=new THREE.Vector2(0,0);let speed=0,lastSpeed=0,peak=0;
 
@@ -620,7 +629,8 @@ const P_=(()=>{
  function step(dt,t){
   let ix=0,iy=0;if(started&&!overlayOpen()){ix=(keys.KeyD||keys.ArrowRight?1:0)-(keys.KeyA||keys.ArrowLeft?1:0);iy=(keys.KeyS||keys.ArrowDown?1:0)-(keys.KeyW||keys.ArrowUp?1:0);if(joy.active){ix=joy.x;iy=joy.y}}
   let mag=Math.min(1,Math.hypot(ix,iy));if(mag>0){const l=Math.hypot(ix,iy);ix/=l;iy/=l}
-  const running=keys.ShiftLeft||keys.ShiftRight||runHold; // 달리기는 달리기 버튼(PC는 Shift)으로만
+  // 조이스틱을 끝까지(85% 이상) 밀면 달리기, 그 안쪽은 기울인 만큼 걷기. PC는 Shift
+  const running=keys.ShiftLeft||keys.ShiftRight||(joy.active&&mag>.85);
   const targetS=mag<.08?0:(running?5.2:(joy.active?lerp(.8,2.2,clamp(mag/.85,0,1)):2.2));
   const cy=Math.cos(VIEW.park.yaw),sy=Math.sin(VIEW.park.yaw);const tv=new THREE.Vector2((ix*cy+iy*sy)*targetS,(-ix*sy+iy*cy)*targetS);vel.lerp(tv,1-Math.exp(-dt*(targetS>speed?9:12)));
   lastSpeed=speed;speed=vel.length();
@@ -631,11 +641,15 @@ const P_=(()=>{
   const rr=Math.hypot(nx,nz),lim=LAYOUT.parkR-2;if(rr>lim){nx*=lim/rr;nz*=lim/rr}
   me.position.x=nx;me.position.z=nz;{const gy=groundAt(nx,nz);me.position.y+=(gy-me.position.y)*(1-Math.exp(-dt*(gy>me.position.y?18:12)))}
   animRunner(me,speed,dt,t,turn*.15,targetS===0?(lastSpeed-speed)/Math.max(dt,1e-3):0);
+  footDust(me,dust,groundCol(me.position.x,me.position.z),3.6,speed,heading);
+  if(me.userData.squash>.75&&!me.userData.dusted){me.userData.dusted=true;for(let i=0;i<5;i++)dust.puff(me.position.x+Math.sin(heading)*.4,me.position.y,me.position.z+Math.cos(heading)*.4,groundCol(me.position.x,me.position.z),{vx:Math.sin(heading)*1.2+(Math.random()-.5)*1.4,vz:Math.cos(heading)*1.2+(Math.random()-.5)*1.4,s1:1.2,a:.6})}
+  if(me.userData.squash<.3)me.userData.dusted=false;
+  dust.step(dt);
   if(started)taStep(dt,t);
   // 다른 러너
   NET.peers.forEach(p=>{const st=p.st;if(!st||st.m!=="p"){if(p.obj)p.obj.visible=false;return}const o=peerObj(p,scene);o.visible=true;const tx=num(st.x,-70,70),tz=num(st.z,-70,70);
    if(p.fresh){o.position.set(tx,0,tz);p.fresh=false}const k=1-Math.exp(-dt*10);o.position.x=lerp(o.position.x,tx,k);o.position.z=lerp(o.position.z,tz,k);
-   p.h=angLerp(p.h,num(st.h,-10,10),1-Math.exp(-dt*12));o.rotation.y=p.h;animRunner(o,p.away||performance.now()-p.at>1500?0:num(st.sp,0,6),dt,t)});
+   p.h=angLerp(p.h,num(st.h,-10,10),1-Math.exp(-dt*12));o.rotation.y=p.h;const psp=p.away||performance.now()-p.at>1500?0:num(st.sp,0,6);animRunner(o,psp,dt,t);footDust(o,dust,groundCol(o.position.x,o.position.z),3.6,psp,p.h)});
   let g=null,bd=1e9;GATES.forEach(G=>{const d=Math.hypot(me.position.x-G.x,me.position.z-G.z);if(d<10&&d<bd){bd=d;g=G}});showCard(started?g:null);
   GATES.forEach(G=>{if(G.portal)G.portal.material.opacity=.75+Math.sin(t*2+G.gd.id)*.2});
   jet.position.y=2.7+Math.abs(Math.sin(t*3))*.35;jet.scale.setScalar(1+Math.sin(t*6)*.1);
@@ -833,7 +847,7 @@ ec.addEventListener("pointerdown",e=>{if(!C.W)return;scrub=true;S.skipped=true;e
 
 const S={s:0,clock:0,lat:2.6,mult:10,paused:false,manual:false,manualT:0,done:false,heading:0,camH:0};
 const MULTS=[1,10,30,60];
-const cMe=makeRunner();cScene.add(cMe);let cLabel=null;
+const cMe=makeRunner();cScene.add(cMe);const cDust=makeDust(cScene,32);let cLabel=null;
 let lastV=0;
 const cNetState=()=>C.active?{m:"c",s:Math.round(S.s),lat:+S.lat.toFixed(1),v:+(S.paused||S.done?0:lastV*S.mult).toFixed(2),vr:+lastV.toFixed(2),mu:S.mult,km:+(S.s*C.W.scaleK/1000).toFixed(2),done:S.done?1:0}:null;
 function jump(s){S.s=clamp(s,0,C.W.L-1);S.clock=timeAt(S.s);S.done=false;const p=cAt(S.s);S.camH=Math.atan2(p.fx,p.fz);S.heading=S.camH;cMe.position.set(p.x-p.fz*S.lat,p.y+.1,p.z+p.fx*S.lat);placeCCam(0,true);updChunks();hudT=0}
@@ -903,7 +917,8 @@ function cStep(dt,t){
  cMe.position.set(p.x-p.fz*lat,p.y+.1,p.z+p.fx*lat);
  const want=Math.atan2(p.fx,p.fz);let d=((want-S.heading+Math.PI*3)%(Math.PI*2))-Math.PI;const kk=1-Math.exp(-dt*(S.mult>20?14:9));S.heading+=d*kk;cMe.rotation.y=S.heading;
  let dc=((want-S.camH+Math.PI*3)%(Math.PI*2))-Math.PI;S.camH+=dc*(1-Math.exp(-dt*(lf<.5?1.6:3)));
- const moving=C.active&&!S.paused&&!S.done;animRunner(cMe,moving?v*Math.min(S.mult,2):0,dt,t,d*kk/Math.max(dt,1e-3)*.1);
+ const moving=C.active&&!S.paused&&!S.done;const av=moving?v*Math.min(S.mult,2):0;animRunner(cMe,av,dt,t,d*kk/Math.max(dt,1e-3)*.1);
+ footDust(cMe,cDust,0xD9D6CC,2.5,av,S.heading,{a:.32,s1:.8,life:.45});cDust.step(dt);
  lastV=moving?v:0;
  // 같은 코스의 다른 러너: 마지막으로 받은 위치 + 속도로 사이 구간을 채움
  const now=performance.now();
