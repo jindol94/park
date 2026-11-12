@@ -659,23 +659,23 @@ const P_=(()=>{
     TA.state="result";TA.show=6;taT.textContent=fin.toFixed(2)+"초";taS.textContent=isBest?"내 최고 기록!":"내 최고 "+TA.best.toFixed(2)+"초";taEl.classList.toggle("win",isBest);cdEl.hidden=true;
     toast(isBest?"새 기록! "+fin.toFixed(2)+"초":"골인 "+fin.toFixed(2)+"초")}}}
  /* ----- 트랙 대결 (모집형): 출발 박스에서 열기 → 15초 모집 → 최대 6명 동시 출발 → 실시간 순위 → 결과 ----- */
- const D={phase:"none",did:null,host:null,hostNick:"",deadline:0,players:new Map(),rcv:0,cd:0,t0:0,prog:0,prevA:0,off:0,offT:0,goT:0,firstFin:0,ui:""};
+ const MAXP=6;const D={phase:"none",did:null,host:null,hostNick:"",deadline:0,players:new Map(),rcv:0,cd:0,t0:0,prog:0,prevA:0,off:0,offT:0,goT:0,firstFin:0,ui:""};
  const dBtn=$("#duelBtn"),dBar=$("#duelBar"),dRank=$("#duelRank");$("#raceIco").innerHTML=SVG.race;
  const laneZ=L=>rIn+(L+.5)*(rOut-rIn)/6,NEEDP=()=>Math.PI*2+D.off;
  const isHost=()=>D.host===NET.id;
  const rosterArr=()=>[...D.players].map(([id,p])=>[id,p.nick,p.lane]);
- function dReset(){D.joinT=0;D.phase="none";D.did=null;D.host=null;D.players=new Map();dBar.hidden=true;dRank.hidden=true;D.ui=""}
- function dSendRoster(){netEvt({t:"roster",did:D.did,host:D.host,hostNick:D.hostNick,left:Math.max(0,D.deadline-performance.now()),players:rosterArr()})}
- function dOpen(){if(D.phase!=="none")return;taReset();D.phase="open";D.did=Math.random().toString(36).slice(2,9);D.host=NET.id;D.hostNick=nick;D.deadline=performance.now()+15000;
+ function dReset(){D.joinT=0;D.placed=false;D.phase="none";D.did=null;D.host=null;D.players=new Map();dBar.hidden=true;dRank.hidden=true;D.ui=""}
+ function dSendRoster(){netEvt({t:"roster",did:D.did,ts:D.ts,host:D.host,hostNick:D.hostNick,left:Math.max(0,D.deadline-performance.now()),players:rosterArr()})}
+ function dOpen(){if(D.phase!=="none")return;taReset();D.phase="open";D.did=Math.random().toString(36).slice(2,9);D.ts=Date.now();D.host=NET.id;D.hostNick=nick;D.deadline=performance.now()+15000;
   D.players=new Map([[NET.id,{nick,lane:0,prog:0}]]);D.rcv=0;dSendRoster();toast("대결을 열었어요 · 15초 동안 참가자를 모아요")}
  function dJoin(){if(D.phase!=="open"||D.players.has(NET.id))return;netEvt({t:"join",did:D.did});D.players.set(NET.id,{nick,lane:-1,prog:0});D.joinT=performance.now();D.ui=""}
  function dQuit(){if(D.phase!=="open")return;if(isHost()){netEvt({t:"cancel",did:D.did});dReset();toast("대결 모집을 취소했어요");return}
-  netEvt({t:"quit",did:D.did});D.players.delete(NET.id);D.ui=""}
+  netEvt({t:"quit",did:D.did});D.players.delete(NET.id);D.placed=false;D.ui=""}
  function dStartNow(){if(!isHost()||D.phase!=="open")return;if(D.players.size<2){netEvt({t:"cancel",did:D.did});dReset();toast("참가자가 없어 대결을 닫았어요");return}
   netEvt({t:"start",did:D.did,players:rosterArr()});dBegin()}
- function dBegin(){const mine=D.players.get(NET.id);if(!mine){D.phase="watch";dBar.hidden=true;return}
+ function dBegin(){const mine=D.players.get(NET.id);if(!mine){D.phase="watch";D.busy=performance.now()+150000;D.busyDid=D.did;dBar.hidden=true;toast("트랙에서 대결이 시작됐어요");return}
   D.phase="cd";D.cd=3;D.players.forEach(p=>{p.prog=0;p.fin=0;p.ms=0;p.dnf=0});
-  me.position.set(-1.6,0,laneZ(Math.max(0,mine.lane)));vel.set(0,0);speed=0;heading=Math.PI/2;me.rotation.y=heading;placeCam(0,true);
+  {const x=me.position.x,z=me.position.z;if(!(x>=-3.05&&x<=-.55&&z>=rIn+.25&&z<=rOut-.25))me.position.set(-1.6,0,laneZ(Math.max(0,mine.lane)))}me.position.y=0;vel.set(0,0);speed=0;heading=Math.PI/2;me.rotation.y=heading;placeCam(0,true);
   dBar.hidden=true;cdEl.hidden=false;cdEl.textContent="3";taEl.hidden=true;dRank.hidden=false}
  function dFinishMe(ms,dnf,msg){const mine=D.players.get(NET.id);if(!mine||mine.fin||mine.dnf)return;if(dnf){mine.dnf=1;netEvt({t:"dnf",did:D.did});toast(msg||"기록 없음")}
   else{mine.fin=1;mine.ms=ms;netEvt({t:"fin",did:D.did,ms:Math.round(ms)});const best=+load("prerun-ta-best")||0;if(!best||ms/1000<best)save("prerun-ta-best",(ms/1000).toFixed(3));lbSubmit(ms)}
@@ -684,7 +684,7 @@ const P_=(()=>{
   arr.sort((a,b)=>(b.fin-a.fin)||(a.fin?a.ms-b.ms:0)||(a.dnf-b.dnf)||(b.prog-a.prog));return arr}
  const badge=i=>i<3?`<img src="assets/rank_${i+1}.webp" alt="${i+1}위">`:`<span class="n">${i+1}</span>`;
  function dDrawRank(){const L=rankList();dRank.innerHTML=L.map((r,i)=>`<div class="rr${r.id===NET.id?" me":""}">${r.dnf?'<span class="n">–</span>':badge(i)}<span>${esc(r.nick)}</span><small>${r.fin?(r.ms/1000).toFixed(2):r.dnf?"DNF":Math.round(r.prog*100)+"%"}</small></div>`).join("")}
- function dResult(){D.phase="result";dRank.hidden=true;taEl.hidden=true;cdEl.hidden=true;const L=rankList();
+ function dResult(){D.phase="result";netEvt({t:"end",did:D.did});dRank.hidden=true;taEl.hidden=true;cdEl.hidden=true;const L=rankList();
   $("#duelRows").innerHTML=L.map((r,i)=>`<div class="rr${r.id===NET.id?" me":""}">${r.fin?badge(i):'<span class="n">–</span>'}<span>${esc(r.nick)}</span><span class="tm${r.fin?"":" dnf"}">${r.fin?(r.ms/1000).toFixed(2)+"초":"기록 없음"}</span></div>`).join("");
   const myI=L.findIndex(r=>r.id===NET.id),mine=L[myI];let note="";
   if(mine&&mine.fin&&myI<3){const pod=POD.find(b=>b.n===String(myI+1));me.position.set(pod.x,pod.h,0);heading=0;me.rotation.y=0;vel.set(0,0);speed=0;placeCam(0,true);note=`${myI+1}위! 시상대에 올라섰어요`}
@@ -694,10 +694,18 @@ const P_=(()=>{
  dBtn.addEventListener("click",dOpen);
  dBar.addEventListener("click",e=>{const b=e.target.closest("button");if(!b)return;({join:dJoin,quit:dQuit,go:dStartNow})[b.dataset.a]()});
  function duelRecv(m){const now=performance.now();
-  if(m.t==="roster"){if(D.phase!=="none"&&D.phase!=="open")return;if(D.phase==="open"&&D.did!==m.did)return;
+  if(m.t==="roster"){if(D.phase!=="none"&&D.phase!=="open")return;
+   let autoJoin=false;
+   if(D.phase==="open"&&D.did!==m.did){
+    // 두 사람이 거의 동시에 모집을 연 경우: 먼저 연 쪽(ts가 작은 쪽, 같으면 did 순)만 남고, 늦은 쪽은 자기 모집을 닫고 먼저 연 대결에 자동 참가
+    if(!isHost())return;const theirs=num(m.ts,0,9e15),mine=D.ts||0;const iLose=theirs<mine||(theirs===mine&&String(m.did)<String(D.did));if(!iLose)return;
+    netEvt({t:"cancel",did:D.did});dReset();autoJoin=true}
+   if(autoJoin)setTimeout(()=>{if(D.phase==="open"&&!D.players.has(NET.id)){dJoin();toast("동시에 열린 대결이 있어 "+D.hostNick+" 님 대결에 함께 참가했어요")}},0);
    if(D.phase==="none"){D.phase="open";D.did=m.did;D.ui=""}D.host=String(m.host).slice(0,12);D.hostNick=String(m.hostNick||"").slice(0,10);D.deadline=now+num(m.left,0,16000);D.rcv=now;
    const mineWas=D.players.get(NET.id);D.players=new Map();(Array.isArray(m.players)?m.players:[]).slice(0,6).forEach(a=>{if(Array.isArray(a))D.players.set(String(a[0]).slice(0,12),{nick:String(a[1]||"러너").slice(0,10),lane:num(a[2],0,5)|0,prog:0})});
-   if(mineWas&&!D.players.has(NET.id)&&now-(D.joinT||0)<3000)D.players.set(NET.id,mineWas);return}
+   if(mineWas&&!D.players.has(NET.id)){if(now-(D.joinT||0)<3000)D.players.set(NET.id,mineWas);else if(D.joinT){D.joinT=0;D.placed=false;toast("정원(6명)이 다 차서 참가하지 못했어요")}}return}
+  if(m.t==="end"){if(D.busyDid===m.did)D.busy=0;return}
+  if(m.t==="start"&&D.phase!=="open"){D.busy=now+150000;D.busyDid=m.did;return}
   if(m.did!==D.did)return;
   if(m.t==="join"&&isHost()&&D.phase==="open"){if(D.players.has(m.id))return;if(D.players.size>=6){return}const used=new Set([...D.players.values()].map(p=>p.lane));let L=0;while(used.has(L))L++;D.players.set(m.id,{nick:String(m.n||"러너").slice(0,10),lane:L,prog:0});dSendRoster();return}
   if(m.t==="quit"&&isHost()&&D.phase==="open"){D.players.delete(m.id);dSendRoster();return}
@@ -706,14 +714,16 @@ const P_=(()=>{
   if((m.t==="fin"||m.t==="dnf")&&(D.phase==="run"||D.phase==="cd")){const p=D.players.get(m.id);if(!p)return;if(m.t==="fin"){p.fin=1;p.ms=num(m.ms,1000,600000);if(!D.firstFin)D.firstFin=now}else p.dnf=1}}
  function duelStep(dt,t){const now=performance.now();
   // 버튼: 출발 박스 안, 대결이 없을 때만
-  const x=me.position.x,z=me.position.z,inBox=x>-3.2&&x<-.5&&z>rIn&&z<rOut;const showBtn=started&&D.phase==="none"&&inBox&&!!NET.room;if(dBtn.hidden===showBtn)dBtn.hidden=!showBtn;
+  const x=me.position.x,z=me.position.z,inBox=x>-3.2&&x<-.5&&z>rIn&&z<rOut;const busy=D.busy&&now<D.busy;const showBtn=started&&D.phase==="none"&&inBox&&!!NET.room&&!busy;if(dBtn.hidden===showBtn)dBtn.hidden=!showBtn;
+  if(started&&D.phase==="none"&&inBox&&busy&&!D.busyHint){D.busyHint=true;toast("트랙에서 대결이 진행 중이에요 · 끝나면 열 수 있어요")}if(!inBox)D.busyHint=false;
   if(D.phase==="open"){const left=Math.max(0,Math.ceil((D.deadline-now)/1000)),joined=D.players.has(NET.id),host=isHost();
+   {const mine=D.players.get(NET.id);if(mine&&mine.lane>=0&&!D.placed){D.placed=true;me.position.set(-1.6,0,laneZ(mine.lane));vel.set(0,0);speed=0;heading=Math.PI/2;me.rotation.y=heading;placeCam(0,true);toast("출발 박스 안에서 원하는 자리를 잡아요")}}
    if(host){if(now-D.rcv>1500){D.rcv=now;dSendRoster()}if(now>=D.deadline){dStartNow();return}}
    else{if(now-D.rcv>5000||(NET.present&&!NET.present.has(D.host))){dReset();return}}
    const ui=`${host}|${joined}|${left}|${D.players.size}`;if(ui!==D.ui){D.ui=ui;dBar.hidden=false;
     dBar.innerHTML=host?`<div class="dt">트랙 대결 모집 중 · ${left}초<small>참가 ${D.players.size}/6명</small></div><button data-a="go"${D.players.size<2?" disabled style=\"opacity:.5\"":""}>바로 출발</button><button class="sec" data-a="quit">취소</button>`
      :joined?`<div class="dt">대결 참가 중 · 출발까지 ${left}초<small>${esc(D.hostNick)} 님의 대결 · ${D.players.size}/6명</small></div><button class="sec" data-a="quit">나가기</button>`
-     :`<div class="dt">${esc(D.hostNick)} 님이 트랙 대결 모집 중 · ${left}초<small>${D.players.size}/6명 참가</small></div>${D.players.size<6?'<button data-a="join">참가</button>':""}`}
+     :`<div class="dt">${esc(D.hostNick)} 님이 트랙 대결 모집 중 · ${left}초<small>${D.players.size}/6명 참가${D.players.size>=6?" · 정원 마감":""}</small></div>${D.players.size<6?'<button data-a="join">참가</button>':""}`}
    return}
   if(D.phase==="cd"){D.cd-=dt;cdEl.textContent=D.cd>0?String(Math.ceil(D.cd)):"GO!";if(D.cd<=0){const a=Math.atan2(me.position.z,me.position.x);D.phase="run";D.t0=t;D.prog=0;D.prevA=a;D.off=wrapA(a-LINE);D.offT=0;D.goT=.7;D.firstFin=0;D.startNow=now;taEl.hidden=false;taS.textContent="트랙 대결 · 반시계 한 바퀴"}dDrawRank();return}
   if(D.phase==="run"){if(D.goT>0&&(D.goT-=dt)<=0)cdEl.hidden=true;const mine=D.players.get(NET.id);
@@ -738,7 +748,9 @@ const P_=(()=>{
   const r=G.race,L=Object.values(r.list);card.innerHTML=`<span class="tag">GATE 0${G.gd.id} · ${r.tag}</span><div class="t">${r.name}</div><div class="m"><span><b>${r.date}</b></span><span>${L.map(c=>c.label).join(" · ")}</span><span>${L.map(c=>c.official+"km").join(" / ")}</span></div><div class="ctas"><button data-race="${G.key}">코스 체험 입장</button></div>`;card.classList.add("show")}
  card.addEventListener("click",e=>{const b=e.target.closest("button[data-race]");if(b)openSetup(b.dataset.race)});
  function step(dt,t){
-  let ix=0,iy=0;if(started&&!overlayOpen()&&D.phase!=="cd"){ix=(keys.KeyD||keys.ArrowRight?1:0)-(keys.KeyA||keys.ArrowLeft?1:0);iy=(keys.KeyS||keys.ArrowDown?1:0)-(keys.KeyW||keys.ArrowUp?1:0);if(joy.active){ix=joy.x;iy=joy.y}}
+  const waitLane=D.phase==="cd";
+  const inStartArea=D.phase==="open"&&D.placed&&D.players.has(NET.id);
+  let ix=0,iy=0;if(started&&!overlayOpen()&&!waitLane){ix=(keys.KeyD||keys.ArrowRight?1:0)-(keys.KeyA||keys.ArrowLeft?1:0);iy=(keys.KeyS||keys.ArrowDown?1:0)-(keys.KeyW||keys.ArrowUp?1:0);if(joy.active){ix=joy.x;iy=joy.y}}
   let mag=Math.min(1,Math.hypot(ix,iy));if(mag>0){const l=Math.hypot(ix,iy);ix/=l;iy/=l}
   // 조이스틱을 끝까지(85% 이상) 밀면 달리기, 그 안쪽은 기울인 만큼 걷기. PC는 Shift
   const running=keys.ShiftLeft||keys.ShiftRight||(joy.active&&mag>.85);
@@ -750,6 +762,8 @@ const P_=(()=>{
   let nx=me.position.x+vel.x*dt,nz=me.position.z+vel.y*dt;
   COLL.forEach(c=>{const dx=nx-c.x,dz=nz-c.z,d=Math.hypot(dx,dz),m=c.r+.3;if(d<m&&d>1e-4){nx=c.x+dx/d*m;nz=c.z+dz/d*m}});
   const rr=Math.hypot(nx,nz),lim=LAYOUT.parkR-2;if(rr>lim){nx*=lim/rr;nz*=lim/rr}
+  // 대결 대기 중: 출발선 뒤 박스 밖으로 못 나감 (어느 레인에서 출발할지는 자유)
+  if(inStartArea){nx=clamp(nx,-3.0,-.6);nz=clamp(nz,LAYOUT.trackIn+.3,LAYOUT.trackOut-.3)}
   me.position.x=nx;me.position.z=nz;{const gy=groundAt(nx,nz);me.position.y+=(gy-me.position.y)*(1-Math.exp(-dt*(gy>me.position.y?18:12)))}
   animRunner(me,speed,dt,t,turn*.15,targetS===0?(lastSpeed-speed)/Math.max(dt,1e-3):0);
   footDust(me,dust,groundCol(me.position.x,me.position.z),3.6,speed,heading);
